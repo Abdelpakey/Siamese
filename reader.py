@@ -12,6 +12,8 @@ import json
 
 from tensorpack import *
 
+from cfgs.config import cfg
+
 import pdb
 
 class Data(RNGDataFlow):
@@ -22,6 +24,35 @@ class Data(RNGDataFlow):
         self.videos = [e.split(' ')[0] for e in videos]
         self.data_size = len(videos) if data_size == None else data_size
         self.frame_range = frame_range
+
+        self.labels = np.zeros((cfg.score_size, cfg.score_size))
+        self.label_weights = np.zeros((cfg.score_size, cfg.score_size))
+
+        ct = cfg.score_size // 2
+
+        def dist(p0, p1):
+            return np.sqrt((p0[0] - p1[0])**2 + (p0[1] - p1[1])**2)
+
+        pos_num = 0
+        neg_num = 0
+        for i in range(cfg.score_size):
+            for j in range(cfg.score_size):
+                if dist((i,j), (ct,ct)) <= cfg.pos_radius:
+                    self.labels[i,j] = 1
+                    pos_num += 1
+                else:
+                    self.labels[i,j] = -1
+                    neg_num += 1
+
+        for i in range(cfg.score_size):
+            for j in range(cfg.score_size):
+                if self.labels[i,j] == 1:
+                    self.label_weights[i,j] = 1 / pos_num
+                else:
+                    self.label_weights[i,j] = 1 / neg_num
+
+        self.labels = np.expand_dims(self.labels, axis=3)
+        self.label_weights = np.expand_dims(self.label_weights, axis=3)
 
     def size(self):
         return self.data_size
@@ -60,7 +91,8 @@ class Data(RNGDataFlow):
         crop_z_img = misc.imread(crop_z_path)
         crop_x_img = misc.imread(crop_x_path)
 
-        return [crop_z_img, crop_x_img]
+
+        return [crop_z_img, crop_x_img, self.labels, self.label_weights]
 
     def get_data(self):
         for k in range(self.size()):
@@ -71,3 +103,4 @@ if __name__ == '__main__':
     ds.reset_state()
     dp_producer = ds.get_data()
     dp = next(dp_producer)
+    pdb.set_trace()

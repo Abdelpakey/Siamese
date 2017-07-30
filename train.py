@@ -21,59 +21,103 @@ class Model(ModelDesc):
 
     def _get_inputs(self):
         return [InputDesc(tf.uint8, [None, cfg.exemplar_size, cfg.exemplar_size, 3], 'exemplar_img'),
-                InputDesc(tf.int32, [None, cfg.search_size, cfg.search_size, 3], 'search_img')]
+                InputDesc(tf.uint8, [None, cfg.search_size, cfg.search_size, 3], 'search_img'),
+                InputDesc(tf.float32, [None, cfg.score_size, cfg.score_size, 1], 'labels'),
+                InputDesc(tf.float32, [None, cfg.score_size, cfg.score_size, 1], 'label_weights')]
 
     def _build_graph(self, inputs):
-        exemplar_img, search_img = inputs
-
-        pdb.set_trace()
+        exemplar_img, search_img, labels, label_weights = inputs
 
         tf.summary.image('exemplar_img', exemplar_img)
         tf.summary.image('search_img', search_img)
 
-        image = tf.cast(image, tf.float32) * (1.0 / 255)
+        exemplar_img = tf.cast(exemplar_img, tf.float32) * (1.0 / 255)
+        search_img = tf.cast(search_img, tf.float32) * (1.0 / 255)
 
         image_mean = tf.constant([0.485, 0.456, 0.406], dtype=tf.float32)
         image_std = tf.constant([0.229, 0.224, 0.225], dtype=tf.float32)
-        image = (image - image_mean) / image_std
-        # image = tf.transpose(image, [0, 3, 1, 2])
+
+        exemplar_img = (exemplar_img - image_mean) / image_std
+        search_img = (search_img - image_mean) / image_std
 
         def network(l):
-            pdb.set_trace()
-            l = Conv2D('conv.0', l, out_channel=96, kernel_shape=(11, 11), padding='VALID', stride=2, nl=BNReLU)
-            l = MaxPooling('pooling.0', l, shape=(3,3), stride=2)
 
-            l = Conv2D('conv.1', l, out_channel=256, kernel_shape=(5, 5), padding='VALID', stride=1, nl=BNReLU, split=2)
-            l = MaxPooling('pooling.0', l, shape=(3,3), stride=2)
+            with argscope(Conv2D, nl=tf.identity, use_bias=False, padding='VALID',
+                          W_init=variance_scaling_initializer(mode='FAN_OUT')):
+                l = (LinearWrap(l)
+                     .Conv2D('conv0', 96, 11, stride=2, nl=BNReLU)
+                     .MaxPooling('pool0', shape=3, stride=2)
+                     .Conv2D('conv1', 256, 5, nl=BNReLU, split=2)
+                     .MaxPooling('pool1', shape=3, stride=2)
+                     .Conv2D('conv2', 192, 3, nl=BNReLU)
+                     .Conv2D('conv3', 192, 3, nl=BNReLU, split=2)
+                     .Conv2D('conv4', 128, 3, split=2)())
+
+
+            # # layer 1
+            # l = Conv2D('conv.0', l, out_channel=96, kernel_shape=11, padding='VALID', stride=2, nl=BNReLU)
+            # l = MaxPooling('pooling.0', l, shape=3, stride=2)
+
+            # # layer 2
+            # l = Conv2D('conv.1', l, out_channel=256, kernel_shape=5, padding='VALID', nl=BNReLU, split=2)
+            # l = MaxPooling('pooling.1', l, shape=3, stride=2)
     
-            l = Conv2D('conv.2', l, out_channel=192, kernel_shape=(3, 3), padding='VALID', stride=1, nl=BNReLU)
-
-            l = Conv2D('conv.3', l, out_channel=192, kernel_shape=(3, 3), padding='VALID', stride=1, nl=BNReLU, split=2)
-
-            l = Conv2D('conv.4', l, out_channel=128, kernel_shape=(3, 3), padding='VALID', stride=1, split=2)
+            # # layer 3-5
+            # l = Conv2D('conv.2', l, out_channel=192, kernel_shape=3, padding='VALID', nl=BNReLU)
+            # l = Conv2D('conv.3', l, out_channel=192, kernel_shape=3, padding='VALID', nl=BNReLU, split=2)
+            # l = Conv2D('conv.4', l, out_channel=128, kernel_shape=3, padding='VALID', split=2)
 
             return l
 
 
-        with tf.variable_scope("siamese") as scope:
-            exemplar_ebd = network(exemplar_image)
-            scope.reuse_variables()
-            search_ebd = network(search_image)
-        
+        with tf.variable_scope("siamese-fc") as scope:
+            net_z = network(exemplar_img)
+            # scope.reuse_variables()
+            # net_x = network(search_img)
+
+        loss = tf.reduce_mean(net_z, name="loss")
+
+        # # net_z and net_x are [B, H, W, C]
+        # net_z = tf.transpose(net_z, perm=[1, 2, 0, 3])
+        # net_x = tf.transpose(net_x, perm=[1, 2, 0, 3])
+
+        # # net_z and net_x are [H, W, B, C]
+        # Hz, Wz, B, C = tf.unstack(tf.shape(net_z))
+        # Hx, Wx, Bx, Cx = tf.unstack(tf.shape(net_x))
+
+        # net_z = tf.reshape(net_z, (Hz, Wz, B*C, 1))
+        # net_x = tf.reshape(net_x, (1, Hx, Wx, B*Cx))
+
+        # # net_z is [Hz, Wz, B*C, 1]
+        # # net_x is [1, Hx, Wx, B*C]
+        # net_final = tf.nn.depthwise_conv2d(net_x, net_z, strides=[1,1,1,1], padding='VALID')
+
+        # # net_final is [1, Hf, Wf, B*C]
+        # net_final = tf.concat(tf.split(net_final, BATCH_SIZE, axis=3), axis=0)
+
+        # # net_final is [B, Hf, Wf, C]
+        # net_final = tf.expand_dims(tf.reduce_sum(net_final, axis=3), axis=3)
+
+        # # net_final is [B, Hf, Wf, 1]
+        # final_bias = tf.Variable(tf.zeros([]), name='final_bias')
+        # net_final = net_final + final_bias * tf.ones((BATCH_SIZE, cfg.score_size, cfg.score_size, 1))
+
+        # loss = tf.log(1 + tf.exp(-net_final * labels)) * label_weights
+        # loss = tf.reduce_mean(tf.reduce_sum(loss, (1,2,3)), name='loss')
 
         wd_cost = regularize_cost('.*/W', l2_regularizer(cfg.weight_decay), name='l2_regularize_loss')
         add_moving_summary(loss, wd_cost)
         self.cost = tf.add_n([loss, wd_cost], name='cost')
 
     def _get_optimizer(self):
-        lr = get_scalar_var('learning_rate', 0.1, summary=True)
+        lr = get_scalar_var('learning_rate', 1e-2, summary=True)
         return tf.train.MomentumOptimizer(lr, 0.9, use_nesterov=True)
 
 
 def get_data(train_or_test):
     isTrain = train_or_test == 'train'
 
-    ds = Data()
+    ds = Data(data_size=cfg.steps_per_epoch)
 
     if isTrain:
         augmentors = [
@@ -97,7 +141,7 @@ def get_data(train_or_test):
         augmentors = [
             imgaug.ToUint8()
         ]
-    ds = AugmentImageComponent(ds, augmentors)
+    # ds = AugmentImageComponent(ds, augmentors)
     if isTrain:
         ds = PrefetchDataZMQ(ds, min(6, multiprocessing.cpu_count()))
     ds = BatchData(ds, BATCH_SIZE, remainder=not isTrain)
@@ -116,7 +160,7 @@ def get_config():
             HumanHyperParamSetter('learning_rate'),
         ],
         model=Model(),
-        max_epoch=160,
+        max_epoch=cfg.max_epoch,
     )
 
 
