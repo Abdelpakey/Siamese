@@ -1,0 +1,9 @@
+*.txt
+*.swp
+data*
+__pycache__
+.ipynb_checkpoints
+train_log
+output*
+test*
+ILSVRC*
