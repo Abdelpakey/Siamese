@@ -41,7 +41,6 @@ class Model(ModelDesc):
         search_img = (search_img - image_mean) / image_std
 
         def network(l):
-
             with argscope(Conv2D, nl=tf.identity, use_bias=False, padding='VALID',
                           W_init=variance_scaling_initializer(mode='FAN_OUT')):
                 l = (LinearWrap(l)
@@ -52,65 +51,48 @@ class Model(ModelDesc):
                      .Conv2D('conv2', 192, 3, nl=BNReLU)
                      .Conv2D('conv3', 192, 3, nl=BNReLU, split=2)
                      .Conv2D('conv4', 128, 3, split=2)())
-
-
-            # # layer 1
-            # l = Conv2D('conv.0', l, out_channel=96, kernel_shape=11, padding='VALID', stride=2, nl=BNReLU)
-            # l = MaxPooling('pooling.0', l, shape=3, stride=2)
-
-            # # layer 2
-            # l = Conv2D('conv.1', l, out_channel=256, kernel_shape=5, padding='VALID', nl=BNReLU, split=2)
-            # l = MaxPooling('pooling.1', l, shape=3, stride=2)
-    
-            # # layer 3-5
-            # l = Conv2D('conv.2', l, out_channel=192, kernel_shape=3, padding='VALID', nl=BNReLU)
-            # l = Conv2D('conv.3', l, out_channel=192, kernel_shape=3, padding='VALID', nl=BNReLU, split=2)
-            # l = Conv2D('conv.4', l, out_channel=128, kernel_shape=3, padding='VALID', split=2)
-
             return l
-
 
         with tf.variable_scope("siamese-fc") as scope:
             net_z = network(exemplar_img)
-            # scope.reuse_variables()
-            # net_x = network(search_img)
+            scope.reuse_variables()
+            net_x = network(search_img)
 
-        loss = tf.reduce_mean(net_z, name="loss")
+        # net_z and net_x are [B, H, W, C]
+        net_z = tf.transpose(net_z, perm=[1, 2, 0, 3])
+        net_x = tf.transpose(net_x, perm=[1, 2, 0, 3])
 
-        # # net_z and net_x are [B, H, W, C]
-        # net_z = tf.transpose(net_z, perm=[1, 2, 0, 3])
-        # net_x = tf.transpose(net_x, perm=[1, 2, 0, 3])
+        # net_z and net_x are [H, W, B, C]
+        Hz, Wz, B, C = tf.unstack(tf.shape(net_z))
+        Hx, Wx, Bx, Cx = tf.unstack(tf.shape(net_x))
 
-        # # net_z and net_x are [H, W, B, C]
-        # Hz, Wz, B, C = tf.unstack(tf.shape(net_z))
-        # Hx, Wx, Bx, Cx = tf.unstack(tf.shape(net_x))
+        net_z = tf.reshape(net_z, (Hz, Wz, B*C, 1))
+        net_x = tf.reshape(net_x, (1, Hx, Wx, B*Cx))
 
-        # net_z = tf.reshape(net_z, (Hz, Wz, B*C, 1))
-        # net_x = tf.reshape(net_x, (1, Hx, Wx, B*Cx))
+        # net_x is [1, Hx, Wx, B*C]
+        # net_z is [Hz, Wz, B*C, 1]
+        net_final = tf.nn.depthwise_conv2d(net_x, net_z, strides=[1,1,1,1], padding='VALID')
 
-        # # net_z is [Hz, Wz, B*C, 1]
-        # # net_x is [1, Hx, Wx, B*C]
-        # net_final = tf.nn.depthwise_conv2d(net_x, net_z, strides=[1,1,1,1], padding='VALID')
+        # net_final is [1, Hf, Wf, B*C]
+        net_final = tf.concat(tf.split(net_final, BATCH_SIZE, axis=3), axis=0)
 
-        # # net_final is [1, Hf, Wf, B*C]
-        # net_final = tf.concat(tf.split(net_final, BATCH_SIZE, axis=3), axis=0)
-
-        # # net_final is [B, Hf, Wf, C]
+        # net_final is [B, Hf, Wf, C]
+        net_final = tf.expand_dims(tf.reduce_mean(net_final, axis=3), axis=3)
         # net_final = tf.expand_dims(tf.reduce_sum(net_final, axis=3), axis=3)
 
-        # # net_final is [B, Hf, Wf, 1]
-        # final_bias = tf.Variable(tf.zeros([]), name='final_bias')
-        # net_final = net_final + final_bias * tf.ones((BATCH_SIZE, cfg.score_size, cfg.score_size, 1))
+        # net_final is [B, Hf, Wf, 1]
+        final_bias = tf.Variable(tf.zeros([]), name='final_bias')
+        net_final = net_final + final_bias * tf.ones((BATCH_SIZE, cfg.score_size, cfg.score_size, 1))
 
-        # loss = tf.log(1 + tf.exp(-net_final * labels)) * label_weights
-        # loss = tf.reduce_mean(tf.reduce_sum(loss, (1,2,3)), name='loss')
+        loss = tf.log(1 + tf.exp(-net_final * labels)) * label_weights
+        loss = tf.reduce_mean(tf.reduce_sum(loss, (1,2,3)), name='loss')
 
         wd_cost = regularize_cost('.*/W', l2_regularizer(cfg.weight_decay), name='l2_regularize_loss')
         add_moving_summary(loss, wd_cost)
         self.cost = tf.add_n([loss, wd_cost], name='cost')
 
     def _get_optimizer(self):
-        lr = get_scalar_var('learning_rate', 1e-2, summary=True)
+        lr = get_scalar_var('learning_rate', 10 ** cfg.start_lr, summary=True)
         return tf.train.MomentumOptimizer(lr, 0.9, use_nesterov=True)
 
 
@@ -155,8 +137,9 @@ def get_config():
         dataflow=ds_train,
         callbacks=[
             ModelSaver(),
-            ScheduledHyperParamSetter('learning_rate',
-                                     [(0, 1e-2), (30, 3e-3), (60, 1e-3), (85, 1e-4), (95, 1e-5)]),
+            HyperParamSetterWithFunc('learning_rate',
+                                     lambda e, x: 10 ** (cfg.start_lr + (cfg.end_lr - cfg.start_lr) * 1.0 * e / (cfg.max_epoch - 1)) ),
+
             HumanHyperParamSetter('learning_rate'),
         ],
         model=Model(),

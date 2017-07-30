@@ -16,3 +16,6 @@ cfg.steps_per_epoch = 100
 cfg.max_epoch = 50
 
 cfg.weight_decay = 5e-4
+
+cfg.start_lr = -2
+cfg.end_lr = -5
