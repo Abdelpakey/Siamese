@@ -25,6 +25,8 @@ class Data(RNGDataFlow):
         self.data_size = len(videos) if data_size == None else data_size
         self.frame_range = frame_range
 
+
+        # generate labels and label_weights
         self.labels = np.zeros((cfg.score_size, cfg.score_size))
         self.label_weights = np.zeros((cfg.score_size, cfg.score_size))
 
@@ -59,7 +61,7 @@ class Data(RNGDataFlow):
 
     def generate_sample(self):
         # randomly choose a video
-        vid = random.choice(self.videos[0:130])
+        vid = random.choice(self.videos[0:400])
         # vid = 'ILSVRC/Data/VID/train/ILSVRC2015_VID_train_0000/ILSVRC2015_train_00010001'
         vid_text = vid + ".txt"
         with open(vid_text) as f:
