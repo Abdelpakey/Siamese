@@ -106,6 +106,7 @@ dirs.sort()
 # In[17]:
 
 for i, dir in enumerate(dirs):
+    continue
     dir_path = os.path.join(root_anno_dir, dir)
     sub_dirs = os.listdir(dir_path)
     sub_dirs.sort()
@@ -153,7 +154,6 @@ for i, dir in enumerate(dirs):
                 
         with open(data_sub_dir_path + ".txt", 'w') as f:
             f.write('\n'.join(vid_records))
-    break
 
 
 # In[ ]:
@@ -262,6 +262,8 @@ def get_crops(img, xmin, ymin, box_width, box_height):
 root_crop_data_dir = os.path.join(root_crop_dir, 'Data/VID/train')
 for i, dir in enumerate(dirs):
     print(dir)
+    if i == 0:
+        continue
     dir_path = os.path.join(root_data_dir, dir)
     crop_dir_path = os.path.join(root_crop_data_dir, dir)
     sub_dirs = os.listdir(dir_path)

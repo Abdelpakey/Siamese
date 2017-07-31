@@ -19,6 +19,10 @@ import pdb
 
 class Model(ModelDesc):
 
+    def __init__(self, batch_size=1):
+        super(Model, self).__init__()
+        self.batch_size = batch_size
+
     def _get_inputs(self):
         return [InputDesc(tf.uint8, [None, cfg.exemplar_size, cfg.exemplar_size, 3], 'exemplar_img'),
                 InputDesc(tf.uint8, [None, cfg.search_size, cfg.search_size, 3], 'search_img'),
@@ -74,7 +78,7 @@ class Model(ModelDesc):
         net_final = tf.nn.depthwise_conv2d(net_x, net_z, strides=[1,1,1,1], padding='VALID')
 
         # net_final is [1, Hf, Wf, B*C]
-        net_final = tf.concat(tf.split(net_final, BATCH_SIZE, axis=3), axis=0)
+        net_final = tf.concat(tf.split(net_final, self.batch_size, axis=3), axis=0)
 
         # net_final is [B, Hf, Wf, C]
         net_final = tf.expand_dims(tf.reduce_mean(net_final, axis=3), axis=3)
@@ -82,7 +86,9 @@ class Model(ModelDesc):
 
         # net_final is [B, Hf, Wf, 1]
         final_bias = tf.Variable(tf.zeros([]), name='final_bias')
-        net_final = net_final + final_bias * tf.ones((BATCH_SIZE, cfg.score_size, cfg.score_size, 1))
+        net_final = net_final + final_bias * tf.ones((self.batch_size, cfg.score_size, cfg.score_size, 1))
+
+        net_final = tf.identity(net_final, name='prediction')
 
         loss = tf.log(1 + tf.exp(-net_final * labels)) * label_weights
         loss = tf.reduce_mean(tf.reduce_sum(loss, (1,2,3)), name='loss')
@@ -96,7 +102,7 @@ class Model(ModelDesc):
         return tf.train.MomentumOptimizer(lr, 0.9, use_nesterov=True)
 
 
-def get_data(train_or_test):
+def get_data(train_or_test, batch_size):
     isTrain = train_or_test == 'train'
 
     ds = Data(data_size=cfg.steps_per_epoch)
@@ -126,23 +132,24 @@ def get_data(train_or_test):
     # ds = AugmentImageComponent(ds, augmentors)
     if isTrain:
         ds = PrefetchDataZMQ(ds, min(6, multiprocessing.cpu_count()))
-    ds = BatchData(ds, BATCH_SIZE, remainder=not isTrain)
+    ds = BatchData(ds, batch_size, remainder=not isTrain)
     return ds
 
 
-def get_config():
-    ds_train = get_data('train')
+def get_config(args):
+    ds_train = get_data('train', args.batch_size)
 
     return TrainConfig(
         dataflow=ds_train,
         callbacks=[
             ModelSaver(),
-            HyperParamSetterWithFunc('learning_rate',
-                                     lambda e, x: 10 ** (cfg.start_lr + (cfg.end_lr - cfg.start_lr) * 1.0 * e / (cfg.max_epoch - 1)) ),
-
+            # HyperParamSetterWithFunc('learning_rate',
+            #                          lambda e, x: 10 ** (cfg.start_lr + (cfg.end_lr - cfg.start_lr) * 1.0 * e / (cfg.max_epoch - 1)) ),
+            ScheduledHyperParamSetter('learning_rate',
+                                     [(0, 1e-2), (50, 3e-3), (100, 1e-3), (150, 3e-4), (200, 1e-4)]),
             HumanHyperParamSetter('learning_rate'),
         ],
-        model=Model(),
+        model=Model(args.batch_size),
         max_epoch=cfg.max_epoch,
     )
 
@@ -159,10 +166,10 @@ if __name__ == '__main__':
 
     assert args.gpu is not None, "Need to specify a list of gpu for training!"
     NR_GPU = len(args.gpu.split(','))
-    BATCH_SIZE = int(args.batch_size) // NR_GPU
+    args.batch_size = int(args.batch_size) // NR_GPU
 
     logger.auto_set_dir()
-    config = get_config()
+    config = get_config(args)
     if args.load:
         config.session_init = get_model_loader(args.load)
     config.nr_tower = NR_GPU
