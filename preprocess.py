@@ -1,8 +1,3 @@
-
-# coding: utf-8
-
-# In[1]:
-
 import os
 import xml.etree.ElementTree as ET
 import struct
@@ -15,98 +10,50 @@ import time
 
 current_time = lambda: int(round(time.time() * 1000))
 
-
-# In[ ]:
-
-
-
-
-# In[2]:
-
-# video_ids.sh
-
-
-# In[3]:
-
 root_dir = 'ILSVRC'
 root_crop_dir = 'ILSVRC_crop'
 
-
-# In[4]:
-
 root_data_dir = os.path.join(root_dir, 'Data/VID/train')
-
-
-# In[5]:
 
 dirs = os.listdir(root_data_dir)
 dirs.sort()
 
-
-# In[6]:
-
-video_idx = 0
-records = []
-for dir in dirs:
-    dir_path = os.path.join(root_data_dir, dir)
-    sub_dirs = os.listdir(dir_path)
-    sub_dirs.sort()
-    for sub_dir in sub_dirs:
-        if "txt" in sub_dir:
-            continue
-        sub_dir_path = os.path.join(dir_path, sub_dir)
-        file_num = len(os.listdir(sub_dir_path))
-        record = sub_dir_path + " " + str(video_idx) + " " + str(file_num)
-        video_idx += 1
-        records.append(record)
+# video_idx = 0
+# records = []
+# for dir in dirs:
+#     dir_path = os.path.join(root_data_dir, dir)
+#     sub_dirs = os.listdir(dir_path)
+#     sub_dirs.sort()
+#     for sub_dir in sub_dirs:
+#         if "txt" in sub_dir:
+#             continue
+#         sub_dir_path = os.path.join(dir_path, sub_dir)
+#         file_num = len(os.listdir(sub_dir_path))
+#         record = sub_dir_path + " " + str(video_idx) + " " + str(file_num)
+#         video_idx += 1
+#         records.append(record)
 
 
-# In[7]:
+# with open("vid_id_frames.txt", 'w') as f:
+#     f.write('\n'.join(records))
 
-with open("vid_id_frames.txt", 'w') as f:
-    f.write('\n'.join(records))
-
-
-# In[ ]:
-
-
-
-
-# In[ ]:
-
-
-
-
-# In[8]:
 
 # per_frame_annotation.m and parse_objects.ml
 # Read per-frame XML annotations and write bbox and track info on txt files
 # Reads per_frame bbox and track information and generates per-video reports
-
-
-# In[9]:
 
 class_names = ['n02691156','n02419796','n02131653','n02834778','n01503061','n02924116','n02958343','n02402425',
                'n02084071','n02121808','n02503517','n02118333','n02510455','n02342885','n02374451','n02129165',
                'n01674464','n02484322','n03790512','n02324045','n02509815','n02411705','n01726692','n02355227',
                'n02129604','n04468005','n01662784','n04530566','n02062744','n02391049']
 
-
-# In[10]:
-
 root_anno_dir = os.path.join(root_dir, 'Annotations/VID/train')
-
-
-# In[11]:
 
 dirs = os.listdir(root_anno_dir)
 dirs.sort()
 
-
-# In[17]:
-
 for i, dir in enumerate(dirs):
-    continue
+    break
     dir_path = os.path.join(root_anno_dir, dir)
     sub_dirs = os.listdir(dir_path)
     sub_dirs.sort()
@@ -155,32 +102,15 @@ for i, dir in enumerate(dirs):
         with open(data_sub_dir_path + ".txt", 'w') as f:
             f.write('\n'.join(vid_records))
 
-
-# In[ ]:
-
-
-
-
-# In[8]:
-
 # save_crops.m
 # Extract and save crops from video
-
-
-# In[9]:
 
 exemplar_size = 127;
 instance_size = 255;
 context_amount = 0.5;
 
-
-# In[10]:
-
 dirs = os.listdir(root_data_dir)
 dirs.sort()
-
-
-# In[11]:
 
 def get_subwindow_avg(img, pos, model_sz, original_sz=None):
 
@@ -225,8 +155,6 @@ def get_subwindow_avg(img, pos, model_sz, original_sz=None):
     return img_patch, left_pad, top_pad, right_pad, bottom_pad
 
 
-# In[12]:
-
 def get_crops(img, xmin, ymin, box_width, box_height):
     xmax = xmin + box_width - 1
     ymax = ymin + box_height - 1
@@ -262,7 +190,7 @@ def get_crops(img, xmin, ymin, box_width, box_height):
 root_crop_data_dir = os.path.join(root_crop_dir, 'Data/VID/train')
 for i, dir in enumerate(dirs):
     print(dir)
-    if i == 0:
+    if i < 3:
         continue
     dir_path = os.path.join(root_data_dir, dir)
     crop_dir_path = os.path.join(root_crop_data_dir, dir)
@@ -289,8 +217,8 @@ for i, dir in enumerate(dirs):
             crop_img_z_path = os.path.join(crop_sub_dir_path, crop_img_z_name)
             crop_img_x_path = os.path.join(crop_sub_dir_path, crop_img_x_name)
             
-#             if os.path.isfile(crop_img_z_path) and os.path.isfile(crop_img_x_path):
-#                 continue
+            if os.path.isfile(crop_img_z_path) and os.path.isfile(crop_img_x_path):
+                continue
 
             img_crop_z, pad_z, img_crop_x, pad_x = get_crops(img, xmin, ymin, box_width, box_height)
             

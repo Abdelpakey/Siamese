@@ -7,3 +7,5 @@ train_log
 output*
 test*
 ILSVRC*
+*.mp4
+result_imgs

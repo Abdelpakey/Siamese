@@ -29,13 +29,12 @@ def get_pred_func(args):
     predict_func = OfflinePredictor(predict_config) 
     return predict_func
 
-def predict_pair(img_z, img_x, predict_func):
+def predict_video(video_path, predict_func):
     img_z = np.expand_dims(img_z, axis=0)
     img_x = np.expand_dims(img_x, axis=0)
     predictions = predict_func([img_z, img_x])
 
     pdb.set_trace()
-
 
 if __name__ == '__main__':
     parser = argparse.ArgumentParser()
@@ -44,9 +43,6 @@ if __name__ == '__main__':
     parser.add_argument('--img_x_path', help='path of the search image')
     args = parser.parse_args()
 
-    img_z = misc.imread(args.img_z_path)
-    img_x = misc.imread(args.img_x_path)
-
     predict_func = get_pred_func(args)
 
-    predict_pair(img_z, img_x, predict_func)
+    predict_video(video_path, predict_func)

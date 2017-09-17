@@ -75,13 +75,13 @@ class Model(ModelDesc):
 
         # net_x is [1, Hx, Wx, B*C]
         # net_z is [Hz, Wz, B*C, 1]
-        net_final = tf.nn.depthwise_conv2d(net_x, net_z, strides=[1,1,1,1], padding='VALID')
+        net_final = tf.nn.depthwise_conv2d(net_x, net_z, strides=[1, 1, 1, 1], padding='VALID', name="net_final_1")
 
         # net_final is [1, Hf, Wf, B*C]
-        net_final = tf.concat(tf.split(net_final, self.batch_size, axis=3), axis=0)
+        net_final = tf.concat(tf.split(net_final, self.batch_size, axis=3), axis=0, name="net_final_2")
 
         # net_final is [B, Hf, Wf, C]
-        net_final = tf.expand_dims(tf.reduce_mean(net_final, axis=3), axis=3)
+        net_final = tf.expand_dims(tf.reduce_mean(net_final, axis=3), axis=3, name="net_final_3")
         # net_final = tf.expand_dims(tf.reduce_sum(net_final, axis=3), axis=3)
 
         # net_final is [B, Hf, Wf, 1]
