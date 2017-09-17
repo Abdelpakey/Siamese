@@ -21,8 +21,7 @@ import pdb
 
 scales = np.asarray([1.04**-1, 1, 1.04])
 scale_penalty = 0.97
-w_influence  = 0.25
-# w_influence  = 0.0
+w_influence  = 0.176
 score_size = 17
 response_up = 16
 total_stride = 8
@@ -50,6 +49,7 @@ def predict_video(args, predict_func):
         return
 
     frame_idx = 0
+    img_rgb = cv2.cvtColor(img, cv2.COLOR_BGR2RGB)
 
     height, width, _ = img.shape
 
@@ -65,8 +65,8 @@ def predict_video(args, predict_func):
     s_z = np.sqrt(wc_z * hc_z)
 
     scale_z = exemplar_size / s_z
-    # crop z from first frame (img)
-    z_crop, _, _, _, _ = get_subwindow_avg(img,
+    # crop z from first frame (img_rgb)
+    z_crop, _, _, _, _ = get_subwindow_avg(img_rgb,
                                            target_position,
                                            (exemplar_size, exemplar_size),
                                            [np.round(s_z).astype(int), np.round(s_z).astype(int)])
@@ -93,13 +93,16 @@ def predict_video(args, predict_func):
         ret, frame = cap.read()
         if ret == False:
             break
+
+        frame_rgb = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
+
         frame_idx += 1
         if frame_idx % 10 == 0:
             print(frame_idx)
         scaled_instance = s_x * scales
         scaled_target = np.dot(np.expand_dims(target_size, 1), np.expand_dims(scales, 0))
 
-        x_crops = make_scale_pyramid(frame, target_position, scaled_instance, instance_size)
+        x_crops = make_scale_pyramid(frame_rgb, target_position, scaled_instance, instance_size)
         x_crops = np.asarray(x_crops)
 
         z_crops = np.tile(np.expand_dims(z_crop, 0), (len(scales), 1, 1, 1))
